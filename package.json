@@ -1,0 +1,35 @@
+{
+  "name": "func-timezones",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Slack local-time conversion with SST, Haiku and OpenAI",
+  "repository": "github:AIH-Software/func-timezones",
+  "engines": { "node": ">=22.14" },
+  "scripts": {
+    "setup": "node --env-file-if-exists=.env --import tsx scripts/setup.ts",
+    "dev": "sst dev",
+    "deploy": "sst deploy",
+    "remove": "sst remove",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "build": "tsc && node scripts/build.mjs",
+    "demo": "node --import tsx src/demo.ts",
+    "evaluate": "node --env-file-if-exists=.env --import tsx src/evaluate.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.900.0",
+    "@aws-sdk/client-sqs": "^3.900.0",
+    "@aws-sdk/lib-dynamodb": "^3.900.0",
+    "dayjs": "^1.11.13",
+    "sst": "4.17.2"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.150",
+    "@types/node": "^22.14.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.sst/
+.setup/
+.env
+.env.*
+!.env.example
+evaluation-results.json
+*.log
+.DS_Store

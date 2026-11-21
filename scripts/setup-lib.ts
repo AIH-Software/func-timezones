@@ -167,6 +167,6 @@ export async function runSetup(args: string[], driver: SetupDriver) {
 
   log(`In the same Slack app, paste ${manifest} into App Manifest and save.`);
   log(`Verify ${endpoint} as the Request URL under Event Subscriptions in Slack.`);
-  log("Invite Func Timezones to a test channel. Use a message's More actions → Convert time to try it.");
+  log("Invite FuckTimezones to a test channel. Use a message's More actions → Convert time to try it.");
   return { manifest, endpoint };
 }

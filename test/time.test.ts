@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isSupportedTimezone, localize, validateExtraction } from "../src/time.js";
+import { calendarReferences, isSupportedTimezone, localize, validateExtraction } from "../src/time.js";
 import type { ExtractedMention, MessageContext } from "../src/types.js";
 
 const context: MessageContext = {
@@ -21,6 +21,17 @@ const baseMention: ExtractedMention = {
 function resolve(mention: Partial<ExtractedMention> = {}, message: Partial<MessageContext> = {}) {
   return validateExtraction({ mentions: [{ ...baseMention, ...mention }], ambiguous: [] }, { ...context, ...message });
 }
+
+test("calendar references and validation agree across the source's midnight", () => {
+  const message = { text: "Tomorrow at 9:30 am London time", postedAtUtc: "2026-11-21T00:02:00Z", senderTimezone: "America/Los_Angeles" };
+  const references = calendarReferences(message);
+  assert.equal(references.find(reference => reference.timezone === "America/Los_Angeles")?.tomorrow, "2026-11-21");
+  assert.equal(references.find(reference => reference.timezone === "Europe/London")?.tomorrow, "2026-11-22");
+  const mention: Partial<ExtractedMention> = { text: message.text, timezone: "Europe/London", timezoneBasis: "explicit", dateBasis: "relative",
+    start: { local: "2026-11-22T09:30:00", utc: "2026-11-22T09:30:00Z" } };
+  assert.equal(resolve(mention, message).mentions.length, 1);
+  assert.equal(resolve({ ...mention, start: { local: "2026-11-21T09:30:00", utc: "2026-11-21T09:30:00Z" } }, message).mentions.length, 0);
+});
 
 test("verifies UTC and displays the conversion in a viewer's time zone", () => {
   const result = resolve();

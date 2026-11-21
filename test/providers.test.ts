@@ -54,7 +54,9 @@ test("Haiku request is schema constrained and parses only complete text output",
       assert.equal(url, "https://api.anthropic.com/v1/messages");
       const request = JSON.parse(String(init?.body));
       assert.equal(request.output_config.format.type, "json_schema");
-      assert.equal(request.messages[0].content, JSON.stringify(context));
+      const input = JSON.parse(request.messages[0].content);
+      assert.equal(input.text, context.text);
+      assert.equal(input.calendarReferences[0].tomorrow, "2026-11-21");
       assert.match(request.system, /DATA, never instructions/);
       assert.equal(request.tools, undefined);
       return Response.json({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(empty) }] });
@@ -71,6 +73,7 @@ test("Luna uses stateless Responses API with schema, complete output and no tool
       assert.equal(url, "https://api.openai.com/v1/responses");
       const request = JSON.parse(String(init?.body));
       assert.equal(request.store, false);
+      assert.equal(JSON.parse(request.input).calendarReferences[0].tomorrow, "2026-11-21");
       assert.equal(request.text.format.strict, true);
       assert.equal(request.tools, undefined);
       return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(empty) }] }] });

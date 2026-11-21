@@ -1,11 +1,11 @@
 {
   "display_information": {
-    "name": "Func Timezones",
+    "name": "FuckTimezones",
     "description": "See times from Slack messages in your local time zone."
   },
   "features": {
     "bot_user": {
-      "display_name": "Func Timezones",
+      "display_name": "FuckTimezones",
       "always_online": false
     }
   },

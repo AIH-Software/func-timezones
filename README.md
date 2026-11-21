@@ -1,6 +1,6 @@
-# Func Timezones
+# FuckTimezones
 
-See times from Slack messages in your local time zone. When someone writes “Tomorrow at 10 AM Pacific works for me,” Func Timezones checks the proposed conversion and can show each eligible person a private Slack notice. Choose **More actions → Convert time** on a message to request a conversion for yourself.
+See times from Slack messages in your local time zone. When someone writes “Tomorrow at 10 AM Pacific works for me,” FuckTimezones checks the proposed conversion and can show each eligible person a private Slack notice. Choose **More actions → Convert time** on a message to request a conversion for yourself. If your workspace requires a different display name, change both `display_information.name` and `features.bot_user.display_name` to FuncTimezones in the local `slack-manifest.json` before setup.
 
 By default Slack displays the time in the viewer’s device time zone. Set `TIME_RENDER_MODE=profile` to use each viewer’s Slack profile time zone. Slack delivers these notices to active members of the conversation, and they disappear when the session ends. [Slack date formatting](https://docs.slack.dev/messaging/formatting-message-text/#date-formatting) · [Ephemeral delivery](https://docs.slack.dev/reference/methods/chat.postEphemeral/)
 
@@ -18,7 +18,7 @@ npm run setup
 1. From [Your Apps](https://api.slack.com/apps), choose **Create New App → From a manifest**, select your workspace, and paste [slack-manifest.json](slack-manifest.json). Install the app in that workspace.
 2. Follow the setup prompts. In the Slack app settings, find the **Bot User OAuth Token** under **OAuth & Permissions** and the **Signing Secret** under **Basic Information**. Enter at least one AI key and both Slack credentials. Each prompt hides the input. The script checks the bot token, saves credentials with SST, and deploys to AWS.
 3. Open **App Manifest** for the same Slack app and replace it with `.setup/slack-manifest.production.json` from the deployment. Save and verify the Request URL when Slack prompts you. The generated manifest configures both Event Subscriptions and Interactivity with the deployed `/slack` endpoint. [Slack manifest reference](https://docs.slack.dev/reference/app-manifest/)
-4. Invite **Func Timezones** to a test channel. With two active members, have one send “Tomorrow at 10 AM Pacific works for me.” Check for a private conversion as the second member, then try **More actions → Convert time**.
+4. Invite the bot by your chosen display name to a test channel. With two active members, have one send “Tomorrow at 10 AM Pacific works for me.” Check for a private conversion as the second member, then try **More actions → Convert time**.
 
 Use `npm run setup -- --stage demo` to deploy a different stage. If you use an AWS profile, set `AWS_PROFILE` in the environment and sign in to it first. For unattended deployment, supply `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` through your environment or CI secret store, then run `npm run setup -- --non-interactive --stage production`. Creating and updating the Slack app still takes place in Slack. The setup script passes credential values to SST through standard input. Rerun setup with the full desired credential set to rotate keys. [SST secret commands](https://sst.dev/docs/reference/cli/#secret)
 
@@ -30,7 +30,7 @@ Use `npm run setup -- --stage demo` to deploy a different stage. If you use an A
 | OpenAI only | GPT-6 Luna handles extraction. |
 | Both | Haiku is primary. Luna takes over on timeouts, connection failures, HTTP 429 or server errors. |
 
-Authentication and model configuration failures require operator attention. The app validates proposed times and withholds ambiguous or unsupported conversions. When the message gives no time zone, the app uses the sender’s Slack profile time zone. When it assumes the date from the message timestamp, the notice identifies that assumption.
+Authentication and model configuration failures require operator attention. The app validates proposed times and withholds ambiguous or unsupported conversions. When the message gives no time zone, the app uses the sender’s Slack profile time zone. “Today” and “tomorrow” use the message timestamp in the stated source time zone, which can already be on a different calendar day from the sender. Code supplies these calendar dates to the model. When it assumes the date from the message timestamp, the notice identifies that assumption.
 
 ## Operation and data
 

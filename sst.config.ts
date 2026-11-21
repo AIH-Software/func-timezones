@@ -1,11 +1,11 @@
 /// <reference path="./.sst/platform/config.d.ts" />
-import { runtimeOptions } from "./src/options.js";
 
 export default $config({
   app() {
     return { name: "func-timezones", home: "aws", removal: "remove", providers: { aws: { region: process.env.AWS_REGION || "us-east-1" } } };
   },
   async run() {
+    const { runtimeOptions } = await import("./src/options.js");
     const providerKeys = new sst.Secret("ProviderKeys", "{}");
     const slackCredentials = new sst.Secret("SlackCredentials", "{}");
     const state = new sst.aws.Dynamo("State", {

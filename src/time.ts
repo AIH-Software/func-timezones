@@ -199,6 +199,20 @@ function explicitZoneIds(text: string): Set<string> {
   return ids;
 }
 
+export function calendarReferences(context: MessageContext) {
+  const posted = parsePostedAt(context.postedAtUtc);
+  if (!posted) return [];
+  const ids = new Set([context.senderTimezone, ...explicitZoneIds(context.text)]);
+  return [...ids].slice(0, 16).flatMap(id => {
+    const zone = parseZone(id);
+    if (!zone) return [];
+    const wall = posted.add(offsetAt(posted, zone), "second");
+    return [{ timezone: zone.id, postedAtLocal: wall.format(localFormat),
+      today: wall.format(dateFormat), tomorrow: wall.add(1, "day").format(dateFormat),
+      yesterday: wall.subtract(1, "day").format(dateFormat) }];
+  });
+}
+
 function sourceZoneMatches(mention: ExtractedMention, source: string, zone: Zone, sender: Zone): boolean {
   const spanIds = explicitZoneIds(mention.text);
   // Honor a message-wide zone only when it explicitly applies to all its times.

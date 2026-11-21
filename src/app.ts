@@ -28,7 +28,7 @@ export class TimezoneApp {
     return !Number.isFinite(reference) || this.clock() - reference > this.config.maxMessageAgeSeconds * 1000 || reference > this.clock() + 60_000;
   }
   private async current(task: ParseTask | DeliveryTask): Promise<boolean> {
-    return !this.expired(task) && !(await this.store.isInvalidated(task.source.channel, task.source.ts,
+    return this.allowed(task.source.channel) && !this.expired(task) && !(await this.store.isInvalidated(task.source.channel, task.source.ts,
       task.source.requestedBy ? task.receivedAt : undefined, task.source.requestedBy ? task.source.revision : undefined));
   }
 

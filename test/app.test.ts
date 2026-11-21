@@ -80,6 +80,13 @@ test("edits and expired sources prevent extraction and fanout", async () => {
   assert.equal(calls(), 0); assert.equal(queue.deliveries.length, 0);
 });
 
+test("workers enforce the channel allowlist even for tasks already in a queue", async () => {
+  const { app, calls, queue, slack } = setup({ config: { ...config, allowedChannels: new Set(["OTHER"]) } });
+  await app.parse(fixture);
+  await app.deliver({ kind: "delivery", id: "outside", source, receivedAt: now, recipient: "U2", mentions: [] });
+  assert.equal(calls(), 0); assert.equal(queue.deliveries.length, 0); assert.equal(slack.posts.length, 0);
+});
+
 test("bad model UTC proposals are withheld; shortcuts get a private explanation", async () => {
   const store = new MemoryStore(), queue = new MemoryQueue(), slack = new SlackMock();
   const app = new TimezoneApp(config, store, queue, slack, { async extract() {

@@ -13,6 +13,7 @@
     "deploy": "sst deploy",
     "remove": "sst remove",
     "typecheck": "tsc --noEmit",
+    "check:infra": "sst install --stage ci && tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict --skipLibCheck sst.config.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "build": "tsc && node scripts/build.mjs",
     "demo": "node --import tsx src/demo.ts",

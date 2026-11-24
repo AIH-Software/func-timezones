@@ -79,6 +79,24 @@ test("handles 30-, 45- and 15-minute offsets", () => {
   }
 });
 
+test("honors the fixed PST offset when the model returns the Pacific region", () => {
+  const text = "Tomorrow at 8:30AM PST";
+  const mention: Partial<ExtractedMention> = {
+    text, timezone: "America/Los_Angeles", dateBasis: "relative",
+    start: { local: "2026-11-24T08:30:00", utc: "2026-11-24T16:30:00Z" },
+  };
+  const result = resolve(mention, { text, postedAtUtc: "2026-11-24T06:29:28Z" });
+  assert.deepEqual(result.rejected, []);
+  assert.equal(result.mentions[0]?.timezone, "UTC-08:00");
+
+  const summer = { text, postedAtUtc: "2026-07-23T20:00:00Z" };
+  const start = { local: "2026-07-24T08:30:00", utc: "2026-07-24T16:30:00Z" };
+  assert.equal(resolve({ ...mention, start }, summer).mentions.length, 1);
+  const daylightClaim = resolve({ ...mention, start: { ...start, utc: "2026-07-24T15:30:00Z" } }, summer);
+  assert.match(daylightClaim.rejected[0]!.reason, /UTC timestamp does not match/);
+  assert.equal(resolve({ ...mention, timezone: "America/New_York" }, { text }).mentions.length, 0);
+});
+
 test("withholds a spring-forward gap even when Day.js can normalize it", () => {
   const result = resolve({
     text: "March 8 at 2:30 am Pacific",
@@ -211,15 +229,44 @@ test("rejects an invented explicit zone, even when the model's proposed arithmet
     timezone: "America/Los_Angeles", timezoneBasis: "sender" }, { text: `All times are UTC. ${text}` }).mentions.length, 0);
 });
 
-test("rejects a contradictory clock, guessed AM/PM, and a contradictory numeric range end", () => {
+test("validates colon times as 24-hour clocks and honors explicit AM/PM", () => {
+  for (const [clock, time] of [
+    ["11:30", "11:30"], ["12:00", "12:00"], ["23:30", "23:30"],
+    ["11:30 PM", "23:30"], ["11:30 (PM)", "23:30"], ["11:30 *PM*", "23:30"],
+  ]) {
+    const text = `${clock} UTC`;
+    const local = `2026-11-20T${time}:00`;
+    assert.equal(resolve({ text, start: { local, utc: `${local}Z` } }, { text }).mentions.length, 1, text);
+  }
+
+  const morning = { local: "2026-11-20T11:30:00", utc: "2026-11-20T11:30:00Z" };
+  const evening = { local: "2026-11-20T23:30:00", utc: "2026-11-20T23:30:00Z" };
+  assert.equal(resolve({ text: "11:30 UTC", start: evening }, { text: "Meet at 11:30 UTC." }).mentions.length, 0);
+  for (const [text, source] of [
+    ["11:30", "11:30 (PM)"], ["11:30 p", "11:30 p.m."],
+    ["11:30", "11:30 PST"], ["11:30", "11:30 UTC+05:30"], ["11:30", "11:30:25"],
+  ]) {
+    const truncated = resolve({ text, timezoneBasis: "sender", start: morning },
+      { text: `Meet at ${source}.`, senderTimezone: "UTC" });
+    assert.equal(truncated.mentions.length, 0, source);
+    assert.match(truncated.rejected[0]!.reason, /original message/);
+  }
+  const invalidSeconds = resolve({ text: "11:30:99 UTC", start: morning }, { text: "Meet at 11:30:99 UTC." });
+  assert.equal(invalidSeconds.mentions.length, 0);
+
+  const text = "11:30–1 PM UTC";
+  const end = { local: "2026-11-20T13:00:00", utc: "2026-11-20T13:00:00Z" };
+  assert.equal(resolve({ text, start: morning, end }, { text }).mentions.length, 1);
+});
+
+test("rejects a contradictory clock, bare hours, and a contradictory numeric range end", () => {
   const badClock = resolve({ text: "3pm UTC", start: { local: "2026-11-20T17:00:00", utc: "2026-11-20T17:00:00Z" } },
     { text: "Meet at 3pm UTC" });
   assert.equal(badClock.mentions.length, 0);
   assert.match(badClock.rejected[0]!.reason, /clock time did not match/);
 
-  for (const text of ["at 3 UTC", "3 UTC", "12:00 UTC"]) {
-    const hour = text.includes("3") ? "03" : "12";
-    const ambiguous = resolve({ text, start: { local: `2026-11-20T${hour}:00:00`, utc: `2026-11-20T${hour}:00:00Z` } }, { text });
+  for (const text of ["at 3 UTC", "3 UTC"]) {
+    const ambiguous = resolve({ text, start: { local: "2026-11-20T03:00:00", utc: "2026-11-20T03:00:00Z" } }, { text });
     assert.equal(ambiguous.mentions.length, 0);
     assert.match(ambiguous.rejected[0]!.reason, /AM\/PM was unclear/);
   }

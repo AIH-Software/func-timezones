@@ -59,6 +59,8 @@ Return start/end local wall datetimes as YYYY-MM-DDTHH:mm:ss WITHOUT an offset, 
 datetimes as YYYY-MM-DDTHH:mm:ssZ. end is null unless the message supplies a time range.
 timezone is a geographic IANA zone (e.g. America/Los_Angeles), UTC, or a numeric offset like UTC+05:30.
 Use an explicit zone from the message when unambiguous, otherwise use senderTimezone and timezoneBasis=sender.
+Honor explicit standard/daylight labels as fixed offsets: PST=UTC-08:00, PDT=UTC-07:00,
+EST=UTC-05:00, EDT=UTC-04:00 when used for North American time.
 Never infer source timezone from the server, recipient, user name, or your own current date.
 Resolve dates relative to postedAtUtc in the SOURCE timezone. 'Tomorrow' means the following source-local date.
 calendarReferences supplies dates calculated in code for the sender and recognized source zones.
@@ -66,14 +68,20 @@ Use the reference for the mention's timezone, including its tomorrow/today/yeste
 An explicit source zone can already be on a different calendar date from the sender; never substitute
 the sender's tomorrow for the explicit source zone's tomorrow. For example, postedAtUtc=2026-11-21T00:02:00Z
 means tomorrow in London is 2026-11-22, while tomorrow in Los Angeles is 2026-11-21.
-If a clock time has no date, use the source-local calendar date of postedAtUtc and dateBasis=message_date;
+An event clearly linked to a dated event in the same message (e.g. "after that call") can inherit that date.
+Only the date carries over from that link. A time zone stated on an earlier clock does not carry over;
+for a later clock without its own time zone, use senderTimezone with timezoneBasis=sender unless
+the message explicitly gives a shared zone (e.g. "both times are in Pacific time").
+When no date is stated or clearly shared, use the source-local calendar date of postedAtUtc and dateBasis=message_date;
 do not roll into the future. Set dateBasis=relative for relative dates, explicit for explicit dates.
 Apply the timezone's rules for the referenced date. UTC offsets, standard time, and daylight time differ.
-Ambiguous abbreviations (IST, CST), missing AM/PM on 1-12 hour clocks (including 'at 3'),
+Read numeric clock times with a colon as 24-hour time when AM/PM is omitted: 11:30 is 11:30 AM,
+12:00 is noon, and 15:30 is 3:30 PM. Respect explicit AM/PM. A suffix can apply to two bare hours
+in a shorthand range like 3–4pm; a clock with a colon such as 11:30 in 11:30–1 PM is read independently.
+Ambiguous abbreviations (IST, CST), bare hours without AM/PM (including 'at 3'),
 ambiguous calendar dates, DST folds/gaps, 'after lunch', 'EOD', and references like 'same time tomorrow'
 must go in ambiguous, not mentions. Clear 'noon', 'midnight', 'half past three in the afternoon',
 'quarter to four pm', 24-hour times like 15:00, and ranges like 3-4pm are supported.
-Treat 12:00 without AM/PM as ambiguous unless the message explicitly establishes 24-hour notation.
 Distinguish clock times from durations, software versions, prices, dates without times, and code samples.
 If a range crosses midnight only infer the next day when that is clear from its wording; otherwise abstain.
 Do not silently invent a year when that would make the date ambiguous. Never invent timezone context.

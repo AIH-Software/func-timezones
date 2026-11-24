@@ -32,6 +32,8 @@ Use `npm run setup -- --stage demo` to deploy a different stage. If you use an A
 
 Authentication and model configuration failures require operator attention. The app validates proposed times and withholds ambiguous or unsupported conversions. When the message gives no time zone, the app uses the sender’s Slack profile time zone. “Today” and “tomorrow” use the message timestamp in the stated source time zone, which can already be on a different calendar day from the sender. Code supplies these calendar dates to the model. When it assumes the date from the message timestamp, the notice identifies that assumption.
 
+Clock times with a colon and no AM or PM use 24-hour notation: `11:30` is 11:30 AM, `12:00` is noon, and `23:30` is 11:30 PM. Use an explicit suffix for 12-hour times, such as `11:30 PM`. `PST` and `PDT` explicitly mean UTC−08:00 and UTC−07:00. Use `Pacific time` for the offset that applies in the Pacific time zone on the specified date.
+
 ## Operation and data
 
 The SST stack runs an HTTPS Slack endpoint, Lambda workers, FIFO parse and delivery queues, and a DynamoDB table. Automatic processing covers message events Slack sends to the bot and excludes the sender from notices by default. The shortcut submits the selected message when invoked. Use it in a conversation the bot has joined so it can post the private notice. Set `SLACK_ALLOWED_CHANNELS` to a comma-separated list of conversation IDs to limit both behaviors. [`.env.example`](.env.example) lists the optional deployment settings. Redeploy after changing them through `npm run deploy -- --stage production` or the command for your chosen stage.

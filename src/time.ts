@@ -114,12 +114,12 @@ function isExtraction(value: unknown): value is Extraction {
       && isSpan(item.text) && typeof item.reason === "string" && item.reason.trim().length > 0);
 }
 
-function sourceHasSpan(source: string, span: string): boolean {
+function sourceHasSpan(source: string, span: string, verifyClockSuffix = false): boolean {
   for (let start = source.indexOf(span); start !== -1; start = source.indexOf(span, start + 1)) {
     const end = start + span.length;
     const cutsWordStart = /\w/.test(span[0] ?? "") && start > 0 && /\w/.test(source[start - 1] ?? "");
     const cutsWordEnd = /\w/.test(span.at(-1) ?? "") && /\w/.test(source[end] ?? "");
-    if (!cutsWordStart && !cutsWordEnd) return true;
+    if (!cutsWordStart && !cutsWordEnd && (!verifyClockSuffix || !cutsClockSuffix(source, start, span))) return true;
   }
   return false;
 }
@@ -152,15 +152,45 @@ const regionLabels = [
 ] as const;
 
 const standardAndDaylightLabels = [
-  [/\b(?:PST|Pacific Standard Time)\b/i, "UTC-08:00"],
-  [/\b(?:PDT|Pacific Daylight Time)\b/i, "UTC-07:00"],
-  [/\b(?:EST|Eastern Standard Time)\b/i, "UTC-05:00"],
-  [/\b(?:EDT|Eastern Daylight Time)\b/i, "UTC-04:00"],
+  [/\b(?:PST|Pacific Standard Time)\b/i, "UTC-08:00", "America/Los_Angeles"],
+  [/\b(?:PDT|Pacific Daylight Time)\b/i, "UTC-07:00", "America/Los_Angeles"],
+  [/\b(?:EST|Eastern Standard Time)\b/i, "UTC-05:00", "America/New_York"],
+  [/\b(?:EDT|Eastern Daylight Time)\b/i, "UTC-04:00", "America/New_York"],
 ] as const;
 
 const offsetLabel = /\b(?:UTC|GMT)(?:[ \t]*([+−-])(\d{1,2})(?::(\d{2}))?)?\b(?![:\d]|[ \t]*[+−-]\d)/gi;
 const standaloneOffset = /(?:^|[\s(]|T\d\d:\d\d(?::\d\d)?)([+−-]\d\d:[0-5]\d)\b/g;
 const utcClock = /(?:\b[01]?\d:[0-5]\d(?::[0-5]\d)?|(?:T|\b)(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?|\b(?:[01]\d|2[0-3])[0-5]\d)Z\b/i;
+const meridiemSuffix = String.raw`[ \t]*(?:[(*][ \t]*)?([ap])\.?m\b`;
+const leadingMeridiem = new RegExp(`^${meridiemSuffix}`, "i");
+const adjacentZoneLabels = [
+  /^(?:UTC|GMT)(?:[ \t]*[+−-]\d{1,2}(?::\d{2})?)?\b/i,
+  /^[+−-]\d{2}:[0-5]\d\b/,
+  /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)+\b/,
+  /^(?:IST|CST)\b/i,
+  ...standardAndDaylightLabels.map(([pattern]) => pattern),
+  ...regionLabels.map(([pattern]) => pattern),
+];
+
+function cutsClockSuffix(source: string, start: number, span: string): boolean {
+  const clock = [...span.matchAll(/(?<![\d:])\d{1,2}:\d{2}/g)].at(-1);
+  if (!clock) return false;
+  const end = start + span.length;
+  const suffixStart = start + clock.index + clock[0].length;
+  const suffix = source.slice(suffixStart);
+  const seconds = /^(?::\d+)+/.exec(suffix)?.[0].length ?? 0;
+  const meridiem = leadingMeridiem.exec(suffix.slice(seconds));
+  const clockEnd = suffixStart + seconds + (meridiem?.[0].length ?? 0);
+  if (end < clockEnd) return true;
+
+  const afterClock = source.slice(clockEnd);
+  const separator = (meridiem ? /^\.?[ \t]*[)*]?[ \t]*[( *]*/ : /^[ \t]*[( *]*/).exec(afterClock)![0];
+  const tail = afterClock.slice(separator.length);
+  return adjacentZoneLabels.some(label => {
+    const match = label.exec(tail);
+    return match?.index === 0 && end < clockEnd + separator.length + match[0].length;
+  });
+}
 
 function explicitZoneIds(text: string): Set<string> {
   const ids = new Set<string>();
@@ -213,19 +243,28 @@ export function calendarReferences(context: MessageContext) {
   });
 }
 
-function sourceZoneMatches(mention: ExtractedMention, source: string, zone: Zone, sender: Zone): boolean {
+function verifiedSourceZone(mention: ExtractedMention, source: string, zone: Zone, sender: Zone): Zone | null {
   const spanIds = explicitZoneIds(mention.text);
   // Honor a message-wide zone only when it explicitly applies to all its times.
   const sharedZone = /\b(?:all|both)\s+(?:times|slots)\s+(?:are\s+(?:in\s+)?|in\s+)([^;.!?\n]+)/i.exec(source)?.[1];
-  const evidence = spanIds.size > 0 || !sharedZone ? spanIds : explicitZoneIds(sharedZone);
+  const evidenceText = spanIds.size > 0 || !sharedZone ? mention.text : sharedZone;
+  const evidence = evidenceText === mention.text ? spanIds : explicitZoneIds(evidenceText);
   const literalMatches = evidence.size === 1 && evidence.has(zone.id);
-  if (mention.timezoneBasis === "sender") return zone.id === sender.id && (evidence.size === 0 || literalMatches);
-  if (evidence.size > 0) return literalMatches;
+  if (mention.timezoneBasis === "sender") return zone.id === sender.id && (evidence.size === 0 || literalMatches) ? zone : null;
+  if (literalMatches) return zone;
+  if (evidence.size > 0) {
+    // Use the literal fixed offset if the extractor named the corresponding region.
+    // UTC validation still rejects a daylight/standard offset mismatch.
+    const label = standardAndDaylightLabels.find(([pattern, offset, region]) =>
+      evidence.size === 1 && evidence.has(offset) && zone.id === region && pattern.test(evidenceText));
+    return label ? parseZone(label[1]) : null;
+  }
 
-  if (zone.kind !== "iana") return false;
+  if (zone.kind !== "iana") return null;
   const city = zone.id.split("/").at(-1)?.replaceAll("_", " ");
-  return Boolean(city && sourceHasSpan(mention.text.toLowerCase(), city.toLowerCase()))
+  const named = Boolean(city && sourceHasSpan(mention.text.toLowerCase(), city.toLowerCase()))
     || /\b(?:local time in\s+[A-Z][\p{L}]+|[A-Z][\p{L}]+\s+local time)\b/u.test(mention.text);
+  return named ? zone : null;
 }
 
 interface NumericClock {
@@ -233,14 +272,17 @@ interface NumericClock {
   minute: number;
   second: number;
   meridiem: "a" | "p" | undefined;
+  hasMinutes: boolean;
   twentyFourHour: boolean;
 }
 
-function numericClocks(text: string): NumericClock[] {
+function numericClocks(text: string): NumericClock[] | null {
   const clocks: NumericClock[] = [];
   const withoutOffsets = text.replace(offsetLabel, " ").replace(standaloneOffset, (offset) => offset.slice(0, -6));
   const onlyBareHour = /^\s*\d{1,2}\s*$/.test(withoutOffsets);
-  const pattern = /(?<![\d:])(\d{1,2})(?::([0-5]\d)(?::([0-5]\d))?)?(?:\s*([ap])\.?m\b\.?)?(?![\d:])/gi;
+  const colonClocks = withoutOffsets.match(/(?<![\d:])\d{1,2}(?::\d+)+/g) ?? [];
+  if (colonClocks.some(clock => !/^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(clock))) return null;
+  const pattern = new RegExp(String.raw`(?<![\d:])(\d{1,2})(?::([0-5]\d)(?::([0-5]\d))?)?(?:${meridiemSuffix}\.?(?:[ \t]*[)*])?)?(?![\d:])`, "gi");
   for (const match of withoutOffsets.matchAll(pattern)) {
     const [token, hour, minute, second, meridiem] = match;
     const before = withoutOffsets.slice(0, match.index);
@@ -256,29 +298,30 @@ function numericClocks(text: string): NumericClock[] {
     if (hours > 23) continue;
     const twentyFourHour = hours === 0 || hours > 12 || /^0\d$/.test(hour ?? "") || /^Z\b/i.test(after)
       || /\d{4}-\d{2}-\d{2}T$/i.test(before) || /\b24[ -]hour\b/i.test(withoutOffsets);
-    clocks.push({ hours, minute: Number(minute ?? 0), second: Number(second ?? 0),
+    clocks.push({ hours, minute: Number(minute ?? 0), second: Number(second ?? 0), hasMinutes: minute !== undefined,
       meridiem: meridiem?.toLowerCase() as NumericClock["meridiem"], twentyFourHour });
   }
 
   if (clocks.length === 0) {
     for (const match of text.matchAll(/\b([01]\d|2[0-3])([0-5]\d)\s*(?:z|hours?|utc|gmt)\b/gi)) {
       clocks.push({ hours: Number(match[1]), minute: Number(match[2]), second: 0,
-        twentyFourHour: true, meridiem: undefined });
+        hasMinutes: true, twentyFourHour: true, meridiem: undefined });
     }
   }
   return clocks;
 }
 
 function clockTime(clock: NumericClock, inheritedMeridiem?: NumericClock["meridiem"]): string | null {
-  const meridiem = clock.meridiem ?? (clock.twentyFourHour ? undefined : inheritedMeridiem);
+  const meridiem = clock.meridiem ?? (clock.twentyFourHour || clock.hasMinutes ? undefined : inheritedMeridiem);
   if (meridiem && (clock.hours < 1 || clock.hours > 12)) return null;
-  if (!meridiem && !clock.twentyFourHour) return null;
+  if (!meridiem && !clock.twentyFourHour && !clock.hasMinutes) return null;
   const hour = meridiem ? clock.hours % 12 + (meridiem === "p" ? 12 : 0) : clock.hours;
   return [hour, clock.minute, clock.second].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
 function sourceClockMatches(mention: ExtractedMention): boolean {
   const clocks = numericClocks(mention.text);
+  if (!clocks) return false;
   const [start, end] = clocks;
   if (!mention.end) return clocks.length === 0 || (clocks.length === 1 && start !== undefined
     && clockTime(start) === mention.start.local.slice(11));
@@ -385,13 +428,14 @@ export function validateExtraction(raw: unknown, context: MessageContext): Valid
 
   for (const mention of raw.mentions) {
     if ([...ambiguous].some((span) => sourceHasSpan(mention.text, span) || sourceHasSpan(span, mention.text))) continue;
-    if (!sourceHasSpan(context.text, mention.text) || !clockPatterns.some((pattern) => pattern.test(mention.text))) {
+    if (!sourceHasSpan(context.text, mention.text, true) || !clockPatterns.some((pattern) => pattern.test(mention.text))) {
       reject("", "A clock time could not be verified in the original message.");
       continue;
     }
 
-    const zone = parseZone(mention.timezone);
-    if (!zone || !sourceZoneMatches(mention, context.text, zone, senderZone)) {
+    const proposedZone = parseZone(mention.timezone);
+    const zone = proposedZone && verifiedSourceZone(mention, context.text, proposedZone, senderZone);
+    if (!zone) {
       reject(mention.text, "The time zone could not be verified from the message or the sender's time zone.");
       continue;
     }
@@ -418,7 +462,7 @@ export function validateExtraction(raw: unknown, context: MessageContext): Valid
       continue;
     }
 
-    result.mentions.push({ ...mention, startUnix: start, endUnix: end });
+    result.mentions.push({ ...mention, timezone: zone === proposedZone ? mention.timezone : zone.id, startUnix: start, endUnix: end });
   }
 
   return result;
